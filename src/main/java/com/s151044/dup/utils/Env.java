@@ -32,7 +32,7 @@ public class Env {
     }
 
     public enum OS {
-        WINDOWS, MAC, LINUX(System.getProperty("user.home") + ".config/dup.xml"), UNKNOWN;
+        WINDOWS, MAC, LINUX(System.getProperty("user.home") + "/.config/dup.xml"), UNKNOWN;
         private Path path;
         OS(){
             path = Path.of(System.getProperty("user.dir") + System.getProperty("file.separator") + "dup.xml");

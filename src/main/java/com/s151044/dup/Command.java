@@ -3,6 +3,8 @@ package com.s151044.dup;
 import com.s151044.dup.utils.Env;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 import picocli.CommandLine;
 
@@ -10,7 +12,10 @@ import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
-import javax.xml.transform.*;
+import javax.xml.transform.OutputKeys;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 import java.io.FileNotFoundException;
@@ -33,12 +38,6 @@ public class Command {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         transformFactory = TransformerFactory.newInstance();
         try {
-            transformFactory.setFeature(OutputKeys.DOCTYPE_PUBLIC, true);
-        } catch (TransformerConfigurationException e) {
-            e.printStackTrace();
-            System.out.println("Unable to indent output XML.");
-        }
-        try {
             factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
             builder = factory.newDocumentBuilder();
         } catch (ParserConfigurationException e) {
@@ -48,6 +47,7 @@ public class Command {
         pref = Preferences.userNodeForPackage(Main.class);
     }
 
+    // Private Helpers
     private boolean hasConfig() {
         Env.OS os = Env.getOS();
         Preferences pref = Preferences.userNodeForPackage(Main.class);
@@ -88,6 +88,7 @@ public class Command {
     private void writeXml(Document doc, OutputStream out) {
         try {
             Transformer trans = transformFactory.newTransformer();
+            trans.setOutputProperty(OutputKeys.INDENT,"yes");
             trans.transform(new DOMSource(doc), new StreamResult(out));
         } catch (TransformerException e) {
             e.printStackTrace();
@@ -105,11 +106,15 @@ public class Command {
         return toAdd;
     }
 
+    private NodeList getNodesUnder(Node n, String toSearch){
+        return ((Element) n).getElementsByTagName(toSearch);
+    }
+    //Commands
     @CommandLine.Command
     public void init() throws FileNotFoundException {
         Scanner scan = new Scanner(System.in);
         if(hasConfig()){
-            System.out.println("Continuing will delete the previous config file at " + getConfig().get() + "\nContinue?");
+            System.out.print("Continuing will delete the previous config file at " + getConfig().get() + "\nContinue?");
             if(!isTrue(scan.nextLine())){
                 System.out.println("Exiting per user request.");
                 return;
@@ -169,5 +174,8 @@ public class Command {
             return;
         }
         Document xml = readDocument(getConfig().get());
+        NodeList botOwns = xml.getDocumentElement().getElementsByTagName("bot");
+        String token = getNodesUnder(botOwns.item(0), "token").item(0).getTextContent();
+        String owner = getNodesUnder(botOwns.item(0), "owner").item(0).getTextContent();
     }
 }
