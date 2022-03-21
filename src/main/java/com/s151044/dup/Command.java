@@ -2,6 +2,7 @@ package com.s151044.dup;
 
 import com.s151044.dup.utils.Env;
 import org.w3c.dom.Document;
+import org.w3c.dom.Element;
 import org.xml.sax.SAXException;
 import picocli.CommandLine;
 
@@ -9,7 +10,13 @@ import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.transform.*;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -20,9 +27,17 @@ public class Command {
     private static DocumentBuilder builder;
     private static Map<Path,Document> cache = new HashMap<>();
     private static Preferences pref;
+    private static TransformerFactory transformFactory;
 
     static{
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        transformFactory = TransformerFactory.newInstance();
+        try {
+            transformFactory.setFeature(OutputKeys.DOCTYPE_PUBLIC, true);
+        } catch (TransformerConfigurationException e) {
+            e.printStackTrace();
+            System.out.println("Unable to indent output XML.");
+        }
         try {
             factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
             builder = factory.newDocumentBuilder();
@@ -56,6 +71,7 @@ public class Command {
         }
         return Optional.empty();
     }
+
     private Document readDocument(Path p) throws IOException, SAXException {
         if(cache.containsKey(p)){
             return cache.get(p);
@@ -64,11 +80,33 @@ public class Command {
         cache.put(p, docs);
         return docs;
     }
+
     private boolean isTrue(String toTest){
         return List.of("yes","y","ok","true").contains(toTest.toLowerCase(Locale.ROOT));
     }
+
+    private void writeXml(Document doc, OutputStream out) {
+        try {
+            Transformer trans = transformFactory.newTransformer();
+            trans.transform(new DOMSource(doc), new StreamResult(out));
+        } catch (TransformerException e) {
+            e.printStackTrace();
+            throw new RuntimeException(e);
+        }
+    }
+
+    private Element addIdInfo(Document doc, Element toAdd, String id, boolean defaults){
+        Element defId = doc.createElement("id");
+        defId.setTextContent(id);
+        Element defElement = doc.createElement("default");
+        defElement.setTextContent(Boolean.toString(defaults));
+        toAdd.appendChild(defId);
+        toAdd.appendChild(defElement);
+        return toAdd;
+    }
+
     @CommandLine.Command
-    public void init(){
+    public void init() throws FileNotFoundException {
         Scanner scan = new Scanner(System.in);
         if(hasConfig()){
             System.out.println("Continuing will delete the previous config file at " + getConfig().get() + "\nContinue?");
@@ -78,19 +116,54 @@ public class Command {
             }
         }
         Path defaultPath = Env.getOS().defaultConfigPath();
-        System.out.println("No config file detected.\n" +
+        System.out.print("No config file detected.\n" +
                 "Enter a new path for the config file, or use the default (" + defaultPath + "): ");
         String response = scan.nextLine();
         if (!response.isEmpty()) {
             defaultPath = Path.of(response);
         }
-        System.out.println("Enter the bot token: ");
+        System.out.print("Enter the bot token: ");
         String token = scan.nextLine();
+        System.out.print("Enter the bot owner's ID: ");
+        String ownerId = scan.nextLine();
+        System.out.print("Would you like to select a default server and channel? ");
+        boolean hasDefault = isTrue(scan.nextLine());
+        String serverId = "", channelId = "";
+        if(hasDefault){
+            System.out.print("Enter a server ID: ");
+            serverId = scan.nextLine();
+            System.out.print("Enter a channel ID: ");
+            channelId = scan.nextLine();
+        }
 
+        //Creating XML
+        Document doc = builder.newDocument();
+        Element root = doc.createElement("dup");
+        doc.appendChild(root);
+        Element bot = doc.createElement("bot");
+        root.appendChild(bot);
+        Element tokenElement = doc.createElement("token");
+        tokenElement.setTextContent(token);
+        Element ownerElement = doc.createElement("owner");
+        ownerElement.setTextContent(ownerId);
+        bot.appendChild(tokenElement);
+        bot.appendChild(ownerElement);
+        Element serverElement = doc.createElement("servers");
+        Element channelElement = doc.createElement("channels");
+        root.appendChild(serverElement);
+        root.appendChild(channelElement);
+        if(hasDefault){
+            serverElement.appendChild(addIdInfo(doc, doc.createElement("server"), serverId, true));
+            channelElement.appendChild(addIdInfo(doc, doc.createElement("channel"), channelId, true));
+        }
+
+        writeXml(doc, new FileOutputStream(defaultPath.toFile()));
         pref.put("config-path", defaultPath.toString());
+        System.out.println("Setup complete.");
     }
+
     @CommandLine.Command
-    public void addServer() throws IOException, SAXException {
+    public void addChannel() throws IOException, SAXException {
         if(!hasConfig()){
             System.out.println("Unable to locate config file. Use dup init to generate one.");
             return;
