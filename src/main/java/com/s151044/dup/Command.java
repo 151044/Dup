@@ -1,5 +1,6 @@
 package com.s151044.dup;
 
+import com.s151044.dup.discord.Bot;
 import com.s151044.dup.utils.Env;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -7,6 +8,7 @@ import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 import picocli.CommandLine;
 
+import javax.security.auth.login.LoginException;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -32,6 +34,8 @@ public class Command {
     private static Map<Path,Document> cache = new HashMap<>();
     private static Preferences pref;
     private static TransformerFactory transformFactory;
+    private boolean botInitialized = false;
+    private Bot bot;
 
     static{
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
@@ -93,6 +97,27 @@ public class Command {
             e.printStackTrace();
             throw new RuntimeException(e);
         }
+    }
+
+    private void initBot(String token, String owner){
+        bot = new Bot(token, owner);
+        try {
+            if(bot.login()){
+                botInitialized = true;
+               return;
+            }
+        } catch (LoginException e) {
+            System.out.println(e);
+        }
+        System.out.println("Failed to login to Discord!");
+        System.exit(1);
+    }
+
+    private void initBot(Document xml){
+        NodeList botOwns = xml.getDocumentElement().getElementsByTagName("bot");
+        String token = getNodesUnder(botOwns, "token",0).item(0).getTextContent();
+        String owner = getNodesUnder(botOwns, "owner",0).item(0).getTextContent();
+        initBot(token, owner);
     }
 
     private Element appendTarget(Document doc, Element targetList, String guild, String channel, boolean defaults){
@@ -176,9 +201,49 @@ public class Command {
             return;
         }
         Document xml = readDocument(getConfig().get());
-        NodeList botOwns = xml.getDocumentElement().getElementsByTagName("bot");
-        String token = getNodesUnder(botOwns, "token",0).item(0).getTextContent();
-        String owner = getNodesUnder(botOwns, "owner",0).item(0).getTextContent();
+        System.out.println("Logging in to Discord, please wait...");
+        initBot(xml);
 
+    }
+    private static class Target{
+        private String guildId;
+        private String channelId;
+        private boolean isDefault;
+
+        public Target(String guildId, String channelId, boolean isDefault){
+            this.guildId = guildId;
+            this.channelId = channelId;
+            this.isDefault = isDefault;
+        }
+
+        public String guildId() {
+            return guildId;
+        }
+
+        public String channelId() {
+            return channelId;
+        }
+
+        public boolean isDefault() {
+            return isDefault;
+        }
+
+        public void setDefault(boolean toSet) {
+            isDefault = toSet;
+        }
+        public Element addToXml(Document doc, Element targetList){
+            Element target = doc.createElement("target");
+            targetList.appendChild(target);
+            Element guildElement = doc.createElement("serverId");
+            guildElement.setTextContent(guildId);
+            Element channelElement = doc.createElement("channelId");
+            channelElement.setTextContent(channelId);
+            Element defaultElement = doc.createElement("default");
+            defaultElement.setTextContent(Boolean.toString(isDefault));
+            target.appendChild(guildElement);
+            target.appendChild(channelElement);
+            target.appendChild(defaultElement);
+            return targetList;
+        }
     }
 }
