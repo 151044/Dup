@@ -3,7 +3,6 @@ package com.s151044.dup;
 import com.s151044.dup.utils.Env;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
-import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 import picocli.CommandLine;
@@ -96,25 +95,31 @@ public class Command {
         }
     }
 
-    private Element addIdInfo(Document doc, Element toAdd, String id, boolean defaults){
-        Element defId = doc.createElement("id");
-        defId.setTextContent(id);
-        Element defElement = doc.createElement("default");
-        defElement.setTextContent(Boolean.toString(defaults));
-        toAdd.appendChild(defId);
-        toAdd.appendChild(defElement);
-        return toAdd;
+    private Element appendTarget(Document doc, Element targetList, String guild, String channel, boolean defaults){
+        Element target = doc.createElement("target");
+        targetList.appendChild(target);
+        Element guildId = doc.createElement("serverId");
+        guildId.setTextContent(guild);
+        Element channelId = doc.createElement("channelId");
+        channelId.setTextContent(channel);
+        Element isDefault = doc.createElement("default");
+        isDefault.setTextContent(Boolean.toString(defaults));
+        target.appendChild(guildId);
+        target.appendChild(channelId);
+        target.appendChild(isDefault);
+        return targetList;
     }
 
-    private NodeList getNodesUnder(Node n, String toSearch){
-        return ((Element) n).getElementsByTagName(toSearch);
+    private NodeList getNodesUnder(NodeList n, String toSearch, int index){
+        return ((Element) n.item(index)).getElementsByTagName(toSearch);
     }
+
     //Commands
     @CommandLine.Command
     public void init() throws FileNotFoundException {
         Scanner scan = new Scanner(System.in);
         if(hasConfig()){
-            System.out.print("Continuing will delete the previous config file at " + getConfig().get() + "\nContinue?");
+            System.out.print("Continuing will delete the previous config file at " + getConfig().get() + "\nContinue? ");
             if(!isTrue(scan.nextLine())){
                 System.out.println("Exiting per user request.");
                 return;
@@ -153,14 +158,11 @@ public class Command {
         ownerElement.setTextContent(ownerId);
         bot.appendChild(tokenElement);
         bot.appendChild(ownerElement);
-        Element serverElement = doc.createElement("servers");
-        Element channelElement = doc.createElement("channels");
-        root.appendChild(serverElement);
-        root.appendChild(channelElement);
+        Element targetListElement = doc.createElement("targets");
         if(hasDefault){
-            serverElement.appendChild(addIdInfo(doc, doc.createElement("server"), serverId, true));
-            channelElement.appendChild(addIdInfo(doc, doc.createElement("channel"), channelId, true));
+            appendTarget(doc, targetListElement, serverId, channelId, true);
         }
+        root.appendChild(targetListElement);
 
         writeXml(doc, new FileOutputStream(defaultPath.toFile()));
         pref.put("config-path", defaultPath.toString());
@@ -175,7 +177,8 @@ public class Command {
         }
         Document xml = readDocument(getConfig().get());
         NodeList botOwns = xml.getDocumentElement().getElementsByTagName("bot");
-        String token = getNodesUnder(botOwns.item(0), "token").item(0).getTextContent();
-        String owner = getNodesUnder(botOwns.item(0), "owner").item(0).getTextContent();
+        String token = getNodesUnder(botOwns, "token",0).item(0).getTextContent();
+        String owner = getNodesUnder(botOwns, "owner",0).item(0).getTextContent();
+
     }
 }
