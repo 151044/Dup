@@ -32,4 +32,7 @@ public class Bot {
         }
         return Optional.ofNullable(g.getTextChannelById(channelId));
     }
+    public void shutdown(){
+        jda.shutdown();
+    }
 }

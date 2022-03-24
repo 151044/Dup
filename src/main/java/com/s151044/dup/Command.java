@@ -36,6 +36,7 @@ public class Command {
     private static TransformerFactory transformFactory;
     private boolean botInitialized = false;
     private Bot bot;
+    private List<Target> targets = new ArrayList<>();
 
     static{
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
@@ -120,23 +121,39 @@ public class Command {
         initBot(token, owner);
     }
 
-    private Element appendTarget(Document doc, Element targetList, String guild, String channel, boolean defaults){
-        Element target = doc.createElement("target");
-        targetList.appendChild(target);
-        Element guildId = doc.createElement("serverId");
-        guildId.setTextContent(guild);
-        Element channelId = doc.createElement("channelId");
-        channelId.setTextContent(channel);
-        Element isDefault = doc.createElement("default");
-        isDefault.setTextContent(Boolean.toString(defaults));
-        target.appendChild(guildId);
-        target.appendChild(channelId);
-        target.appendChild(isDefault);
-        return targetList;
+    private void initTargets(Document xml){
+        NodeList targeted = xml.getDocumentElement().getElementsByTagName("targets");
+        targeted = ((Element) targeted.item(0)).getElementsByTagName("target");
+        for(int i = 0; i < targeted.getLength(); i++){
+            String serverId = getNodesUnder(targeted, "serverId",i).item(0).getTextContent();
+            String channelId = getNodesUnder(targeted, "channelId",i).item(0).getTextContent();
+            boolean isDefault = Boolean.parseBoolean(getNodesUnder(targeted, "default", i).item(0).getTextContent());
+            targets.add(new Target(serverId, channelId, isDefault));
+        }
     }
 
     private NodeList getNodesUnder(NodeList n, String toSearch, int index){
         return ((Element) n.item(index)).getElementsByTagName(toSearch);
+    }
+
+    private Document initialize() throws IOException, SAXException {
+        if(!hasConfig()){
+            System.out.println("Unable to locate config file. Use dup init to generate one.");
+            System.exit(0);
+        }
+        Document xml = readDocument(getConfig().get());
+        System.out.println("Logging in to Discord, please wait...");
+        initBot(xml);
+        initTargets(xml);
+        return xml;
+    }
+
+    private void shutdown(Document doc) throws FileNotFoundException {
+        bot.shutdown();
+        doc.removeChild(doc.getElementsByTagName("targets").item(0));
+        Element targetsElement = doc.createElement("targets");
+        targets.forEach(t -> t.addToXml(doc, targetsElement));
+        writeXml(doc, new FileOutputStream(getConfig().get().toFile()));
     }
 
     //Commands
@@ -185,7 +202,8 @@ public class Command {
         bot.appendChild(ownerElement);
         Element targetListElement = doc.createElement("targets");
         if(hasDefault){
-            appendTarget(doc, targetListElement, serverId, channelId, true);
+            Target t = new Target(serverId, channelId, true);
+            t.addToXml(doc, targetListElement);
         }
         root.appendChild(targetListElement);
 
@@ -196,15 +214,17 @@ public class Command {
 
     @CommandLine.Command
     public void addChannel() throws IOException, SAXException {
-        if(!hasConfig()){
-            System.out.println("Unable to locate config file. Use dup init to generate one.");
-            return;
-        }
-        Document xml = readDocument(getConfig().get());
-        System.out.println("Logging in to Discord, please wait...");
-        initBot(xml);
+        Document doc = initialize();
 
+        shutdown(doc);
     }
+
+    @CommandLine.Command
+    public void daemon() throws IOException, SAXException {
+        Document doc = initialize();
+        shutdown(doc);
+    }
+
     private static class Target{
         private String guildId;
         private String channelId;
@@ -244,6 +264,28 @@ public class Command {
             target.appendChild(channelElement);
             target.appendChild(defaultElement);
             return targetList;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            Target target = (Target) o;
+            return Objects.equals(guildId, target.guildId) && Objects.equals(channelId, target.channelId);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(guildId, channelId);
+        }
+
+        @Override
+        public String toString() {
+            return "Target{" +
+                    "guildId='" + guildId + '\'' +
+                    ", channelId='" + channelId + '\'' +
+                    ", isDefault=" + isDefault +
+                    '}';
         }
     }
 }
