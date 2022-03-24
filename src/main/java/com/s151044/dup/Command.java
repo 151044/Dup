@@ -4,6 +4,7 @@ import com.s151044.dup.discord.Bot;
 import com.s151044.dup.utils.Env;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
+import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 import picocli.CommandLine;
@@ -19,6 +20,10 @@ import javax.xml.transform.TransformerException;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
+import javax.xml.xpath.XPathConstants;
+import javax.xml.xpath.XPathExpression;
+import javax.xml.xpath.XPathExpressionException;
+import javax.xml.xpath.XPathFactory;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -27,6 +32,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.prefs.Preferences;
+import java.util.stream.Collectors;
 
 @CommandLine.Command(name = "Dup", mixinStandardHelpOptions = true, version = "0.0.1")
 public class Command {
@@ -148,16 +154,30 @@ public class Command {
         return xml;
     }
 
-    private void shutdown(Document doc) throws FileNotFoundException {
-        bot.shutdown();
-        doc.removeChild(doc.getElementsByTagName("targets").item(0));
+    private void shutdown(Document doc) throws FileNotFoundException, XPathExpressionException {
+        if(botInitialized) {
+            bot.shutdown();
+        }
+        doc.getDocumentElement().removeChild(doc.getDocumentElement().getElementsByTagName("targets").item(0));
+        //Trim the useless empty space
+        XPathFactory xpathFactory = XPathFactory.newInstance();
+        XPathExpression xpathExp = xpathFactory.newXPath().compile("//text()[normalize-space(.) = '']");
+        NodeList emptyTextNodes = (NodeList)
+                xpathExp.evaluate(doc, XPathConstants.NODESET);
+
+        for (int i = 0; i < emptyTextNodes.getLength(); i++) {
+            Node emptyTextNode = emptyTextNodes.item(i);
+            emptyTextNode.getParentNode().removeChild(emptyTextNode);
+        }
+        //Writes out XML
         Element targetsElement = doc.createElement("targets");
         targets.forEach(t -> t.addToXml(doc, targetsElement));
+        doc.getDocumentElement().appendChild(targetsElement);
         writeXml(doc, new FileOutputStream(getConfig().get().toFile()));
     }
 
     //Commands
-    @CommandLine.Command
+    @CommandLine.Command(description = "Initializes dup")
     public void init() throws FileNotFoundException {
         Scanner scan = new Scanner(System.in);
         if(hasConfig()){
@@ -212,17 +232,37 @@ public class Command {
         System.out.println("Setup complete.");
     }
 
-    @CommandLine.Command
-    public void addChannel() throws IOException, SAXException {
+    @CommandLine.Command(name = "add-channel", description = "Interactively adds a channel")
+    public void addChannel() throws IOException, SAXException, XPathExpressionException {
         Document doc = initialize();
-
+        Scanner scan = new Scanner(System.in);
+        System.out.print("Please enter the server ID: ");
+        String serverId = scan.nextLine();
+        System.out.print("Please enter the channel ID: ");
+        String channelId = scan.nextLine();
+        if(bot.getChannel(serverId, channelId).isEmpty()){
+            System.out.println("Bot unable to reach channel. Exiting.");
+            System.exit(0);
+        }
+        System.out.print("Set as default? ");
+        boolean setDefault = isTrue(scan.nextLine());
+        if(setDefault){
+            targets.forEach(t -> t.setDefault(false));
+        }
+        Target target = new Target(serverId, channelId, setDefault);
+        if(targets.contains(target)){
+            targets.get(targets.indexOf(target)).setDefault(setDefault);
+        } else {
+            targets.add(target);
+        }
         shutdown(doc);
     }
 
-    @CommandLine.Command
-    public void daemon() throws IOException, SAXException {
+    @CommandLine.Command(description = "Runs as a bot for using slash commands")
+    public void daemon() throws IOException, SAXException, XPathExpressionException {
         Document doc = initialize();
-        shutdown(doc);
+        bot.insertSlashCommand(targets.stream().map(Target::guildId).collect(Collectors.toList()));
+        //shutdown(doc);
     }
 
     private static class Target{
